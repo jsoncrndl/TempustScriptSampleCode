@@ -1,28 +1,33 @@
-using System;
+using System.Collections;
 using System.Collections.Generic;
-using System.Text.Json.Serialization;
+using System.Runtime.Serialization;
 
-namespace TempustScriptInterpreter
+namespace TempustScript
 {
+    [DataContract(Name="Region")]
     public class Region : ScriptElement
     {
-        [JsonInclude] public List<ScriptElement> elements;
-        private string name { get; }
-        public string Name { get { return name; } }
+        [DataMember] private List<ScriptElement> elements;
+        [DataMember] private string name;
+        [DataMember] private TSScript parent;
 
-        public Region(PCScript parent, string name, List<ScriptElement> elements)
+        public Region(TSScript parent, string name, List<ScriptElement> elements)
         {
+            this.parent = parent;
             this.name = name;
             this.elements = elements;
         }
 
-        public bool Execute()
+        public string GetName() { return name; }
+
+        public IEnumerator Execute()
         {
+            yield return null;
             foreach (ScriptElement element in elements)
             {
-                element.Execute();
+                yield return element.Execute();
             }
-            return true;
+            parent.StopExecution(true);
         }
     }
 }
