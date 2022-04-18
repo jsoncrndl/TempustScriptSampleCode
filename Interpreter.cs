@@ -1,53 +1,22 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Security.Cryptography;
-using TempustScriptInterpreter.InterpreterException;
+using System.Text.RegularExpressions;
+using TempustScript.InterpreterException;
 
-namespace TempustScriptInterpreter
+namespace TempustScript
 {
     public class Interpreter
     {
-        static void Main(string[] args)
+        public static TSScript MakeScript(string filePath)
         {
-            string filePath = Path.Combine(Environment.CurrentDirectory, @"data\test.tmpst");
+            TSScript script = new TSScript();
+            string content = File.ReadAllText(filePath);
 
-            List<string> askTest = new List<string> {
-            "ask[\"Village Girl\"] \"Have you seen my dog?\"",
-            "{",
-            "\topt \"No\"",
-            "\t{",
-            "\t\tsay \"That's too bad\"",
-            "\t}",
-            "\topt \"Yes\"",
-            "\t{",
-            "\t\tsay \"Thank you!\"",
-            "\t}",
-            "}"
-            };
+            content = Regex.Replace(content, "(//.*$)|(/\\*[\\s\\S]*?\\*/)", "", RegexOptions.Multiline);
 
-            //Block.AskBlock block = BlockFactory.MakeAskBlock(null, askTest);
-            //TestConditions();
+            string[] lines = content.Split('\n');
 
-            DataSerializer.Serialize(MakeScript(filePath), Path.GetFileNameWithoutExtension(filePath), new DESCryptoServiceProvider());
-            PCScript script = DataSerializer.Deserialize(Path.Combine(Environment.CurrentDirectory, @"test.pc"), new DESCryptoServiceProvider());
-        }
-
-        public static void TestConditions()
-        {
-            PCScript pc = new PCScript();
-            pc.SetLocalFlag("flag1", false);
-            pc.SetLocalFlag("flag2", true);
-            pc.SetLocalFlag("flag3", true);
-            pc.SetLocalFlag("flag4", false);
-            Block.ConditionalBlock block = new Block.ConditionalBlock(pc, "check local flag1 or check local flag2 and check local flag3 or check local flag4", null);
-            //bool met = block.ConditionMet();
-        }
-
-        public static PCScript MakeScript(string filePath)
-        {
-            PCScript script = new PCScript();
-            string[] lines = File.ReadAllLines(filePath);
             SeparateRegions(script, lines);
             return script;
         }
@@ -55,13 +24,13 @@ namespace TempustScriptInterpreter
         /**
          * Separate and add regions to the parent. This creates all blocks and commands in the script.
          */
-        private static void SeparateRegions(PCScript parent, string[] lines)
+        private static void SeparateRegions(TSScript parent, string[] lines)
         {
             int curLine = 0;
             List<string> defaultRegion = new List<string>();
             while (curLine < lines.Length)
             {
-                if (lines[curLine].Trim().Split(" ")[0].Equals("region"))
+                if (lines[curLine].Trim().Split(' ')[0].Equals("region"))
                 {
                     int startLine = curLine;
                     List<string> regionLines = new List<string>();
@@ -69,8 +38,9 @@ namespace TempustScriptInterpreter
                     {
                         if (!lines[curLine].Trim().Equals(""))
                         {
-                            regionLines.Add(lines[curLine]);
+                            regionLines.Add(lines[curLine].Trim('\r', '\n'));
                         }
+
                         curLine++;
 
                         if (curLine >= lines.Length)
@@ -85,7 +55,7 @@ namespace TempustScriptInterpreter
                 }
                 else if (!lines[curLine].Trim().Equals(""))
                 {
-                    defaultRegion.Add(lines[curLine]);
+                    defaultRegion.Add(lines[curLine].Trim('\r', '\n'));
                 }
                 curLine++;
             }
@@ -96,7 +66,7 @@ namespace TempustScriptInterpreter
         /**
          * Separate lines of tempust script into blocks and commands with the given parent.
          */
-        public static List<ScriptElement> ReadLines(PCScript parent, List<string> lines)
+        public static List<ScriptElement> ReadLines(TSScript parent, List<string> lines)
         {
             List<ScriptElement> elements = new List<ScriptElement>();
             //Check for blocks. Blocks start with ask[], say[], check, checknot, or op1, and will always have { as the next line, and will end with }.
@@ -106,7 +76,14 @@ namespace TempustScriptInterpreter
                 //If this line or the next line isn't {, treat it as a command. Errors will be found later
                 if (lines[currentLine].Trim() != "{" && (currentLine + 1 == lines.Count || (currentLine + 1 < lines.Count && !lines[currentLine + 1].Trim().Equals("{"))))
                 {
-                    elements.Add(CommandFactory.MakeCommand(parent, lines[currentLine]));
+                    if (lines[currentLine].StartsWith("def"))
+                    {
+                        parent.AddObject(lines[currentLine].Split(" ".ToCharArray(), 2)[1]);
+                    }
+                    else
+                    {
+                        elements.Add(CommandFactory.MakeCommand(parent, lines[currentLine]));
+                    }
                 }
                 else if (lines[currentLine].Trim().Equals("{"))
                 {
@@ -116,7 +93,6 @@ namespace TempustScriptInterpreter
                     currentLine++;
                     int startLine = currentLine - 1;
                     int depth = 0;
-
 
                     //Start building the block. Depth with an else block can be a bit confusing. The } before the else moves depth to -1, then the { after else moves it back to 0.
                     while (!lines[currentLine].Trim().Equals("}") || depth != 0 || (currentLine + 1 < lines.Count && lines[currentLine + 1].Trim().Equals("else")))
